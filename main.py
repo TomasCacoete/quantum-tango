@@ -1,3 +1,5 @@
+import sympy as sy
+
 EMPTY = None
 SUN = 1
 MOON = 0
@@ -111,8 +113,59 @@ def print_board(test_case):
 
     print(board_str)
 
+def row_col_penalty(symbols):
+    result = 0
+    for symbol in symbols:
+        result += symbol
+    
+    result -= int(len(symbols)/2)
+    return result**2
 
+
+def equal_penalty(symbol1, symbol2):
+    return (symbol1-symbol2)**2
+
+def opposite_penalty(symbol1, symbol2):
+    return 1-equal_penalty(symbol1, symbol2)
+
+
+def penalty_encoding(test_case):
+    n_rows = len(test_case["board"])
+    n_cols = len(test_case["board"][0])
+
+    board_symbols = []
+
+    for row in range(n_rows):
+        row_symbols = ""
+        for col in range(n_cols):
+            row_symbols += f"x{row}{col} "
+        
+        board_symbols.append(sy.symbols(row_symbols))
+
+
+    result = 0
+
+    #rows penalty
+    for row in board_symbols:
+        result += row_col_penalty(row)
+
+    #cols penalty
+    for col in zip(*board_symbols):
+        result += row_col_penalty(col)
+
+    #equals penalty
+    for coords1, coords2 in test_case["equals_coords"]:
+        result += equal_penalty(board_symbols[coords1[0]][coords1[1]], board_symbols[coords2[0]][coords2[1]])
+
+    #opposites penalty
+    for coords1, coords2 in test_case["opposites_coords"]:
+        result += opposite_penalty(board_symbols[coords1[0]][coords1[1]], board_symbols[coords2[0]][coords2[1]])
+
+
+    print(result.expand())
 #dwave-neal - Passamos os coeficientes e resolve o problema
 
 if __name__ == "__main__":
-    print_board(test_cases[0])
+    #print_board(test_cases[0])
+
+    penalty_encoding(test_cases[0])
