@@ -177,11 +177,16 @@ def penalty_encoding(test_case):
         for i in range(len(row) - 3 + 1):
             result += three_followed_penalty(row[i: i + 3][0], row[i: i + 3][1], row[i: i + 3][2])
 
+    return result.expand()
 
-    print(result.as_independent(*result.free_symbols, as_Add=True)[1].as_poly().coeffs())
+
+def get_Q_matrix(expanded_penalty):
+    return expanded_penalty.as_independent(*expanded_penalty.free_symbols, as_Add=True)[1].as_poly().coeffs()
+
 #dwave-neal - Passamos os coeficientes e resolve o problema
 
 if __name__ == "__main__":
     #print_board(test_cases[0])
 
-    penalty_encoding(test_cases[0])
+    penalty = penalty_encoding(test_cases[0])
+    print(len(get_Q_matrix(penalty)))
