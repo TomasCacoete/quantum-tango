@@ -1,8 +1,8 @@
 import sympy as sy
 
 EMPTY = None
-SUN = 1
-MOON = 0
+SUN   = 1
+MOON  = 0
 
 test_cases = [
     {
@@ -114,34 +114,33 @@ def print_board(test_case):
     print(board_str)
 
 def row_col_penalty(symbols):
-    result = 0
-    for symbol in symbols:
-        result += symbol
-    
-    result -= int(len(symbols)/2)
-    return result**2
+    penalty = sum(symbols)
+    penalty -= int(len(symbols) / 2)
+    penalty = penalty**2
+
+    penalty = penalty.expand()
+    return penalty.subs({s**2: s for s in symbols})
 
 
 def equal_penalty(symbol1, symbol2):
-    return (symbol1-symbol2)**2
+    penalty = (symbol1-symbol2)**2
+
+    penalty = penalty.expand()
+    return penalty.subs({symbol1**2: symbol1, symbol2**2: symbol2})
+
 
 def opposite_penalty(symbol1, symbol2):
-    return 1-equal_penalty(symbol1, symbol2)
+    penalty = (symbol1+symbol2-1)**2
+
+    penalty = penalty.expand()
+    return penalty.subs({symbol1**2: symbol1, symbol2**2: symbol2})
 
 
 def penalty_encoding(test_case):
     n_rows = len(test_case["board"])
     n_cols = len(test_case["board"][0])
-
-    board_symbols = []
-
-    for row in range(n_rows):
-        row_symbols = ""
-        for col in range(n_cols):
-            row_symbols += f"x{row}{col} "
-        
-        board_symbols.append(sy.symbols(row_symbols))
-
+    
+    board_symbols = [[sy.Symbol(f"x{r}{c}") for c in range(n_cols)] for r in range(n_rows)]
 
     result = 0
 
