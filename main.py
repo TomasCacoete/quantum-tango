@@ -136,6 +136,13 @@ def opposite_penalty(symbol1, symbol2):
     return penalty.subs({symbol1**2: symbol1, symbol2**2: symbol2})
 
 
+def three_followed_penalty(symbol1, symbol2, symbol3):
+    penalty = ((symbol1 + symbol2 + symbol3)*2/3 - 1)**2
+    
+    penalty = penalty.expand()
+    return penalty.subs({symbol1**2: symbol1, symbol2**2: symbol2, symbol3**2: symbol3})
+
+
 def penalty_encoding(test_case):
     n_rows = len(test_case["board"])
     n_cols = len(test_case["board"][0])
@@ -160,8 +167,18 @@ def penalty_encoding(test_case):
     for coords1, coords2 in test_case["opposites_coords"]:
         result += opposite_penalty(board_symbols[coords1[0]][coords1[1]], board_symbols[coords2[0]][coords2[1]])
 
+    #three followed rows penalty
+    for row in board_symbols:
+        for i in range(len(row) - 3 + 1):
+            result += three_followed_penalty(row[i: i + 3][0], row[i: i + 3][1], row[i: i + 3][2])
 
-    print(result.expand())
+    #three followed cols penalty
+    for col in zip(*board_symbols):
+        for i in range(len(row) - 3 + 1):
+            result += three_followed_penalty(row[i: i + 3][0], row[i: i + 3][1], row[i: i + 3][2])
+
+
+    print(result.as_independent(*result.free_symbols, as_Add=True)[1].as_poly().coeffs())
 #dwave-neal - Passamos os coeficientes e resolve o problema
 
 if __name__ == "__main__":
