@@ -117,6 +117,18 @@ def print_board(test_case, solution=None):
 
     print(board_str)
 
+def starting_moon_penalty(symbol):
+    penalty = (symbol-0)**2
+
+    penalty = penalty.expand()
+    return penalty.subs({symbol**2: symbol})
+
+def starting_sun_penalty(symbol):
+    penalty = (symbol-1)**2
+
+    penalty = penalty.expand()
+    return penalty.subs({symbol**2: symbol})
+
 def row_col_penalty(symbols):
     penalty = (sum(symbols) - int(len(symbols) / 2)) ** 2
 
@@ -146,12 +158,22 @@ def three_followed_penalty(symbol1, symbol2, symbol3):
 
 
 def penalty_encoding(test_case):
+
     n_rows = len(test_case["board"])
     n_cols = len(test_case["board"][0])
+    board = test_case["board"]
     
     board_symbols = [[sy.Symbol(f"x{r}_{c}") for c in range(n_cols)] for r in range(n_rows)]
 
     result = 0
+
+    for i in range(n_rows):
+        for j in range(n_cols):
+            if board[i][j] == SUN:
+                result += starting_sun_penalty(board_symbols[i][j])
+            
+            elif board[i][j] == MOON:
+                result += starting_moon_penalty(board_symbols[i][j])
 
     #rows penalty
     for row in board_symbols:
