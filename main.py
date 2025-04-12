@@ -2,13 +2,18 @@ import numpy as np
 import sympy as sy
 import neal
 
+import json
 import re
+
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
 EMPTY = None
 SUN   = 1
 MOON  = 0
 
-test_cases = [
+test_cases_linkedin = [
     {
         "name": "Linkedin 171",
         "board": [
@@ -20,15 +25,43 @@ test_cases = [
             [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY]
         ],
         "equals_coords": [
-            [(1,1), (1,2)],
-            [(3,4), (3,5)],
-            [(4,3), (4,4)],
+            [[1,1], [1,2]],
+            [[3,4], [3,5]],
+            [[4,3], [4,4]],
         ],
         "opposites_coords": [
-            [(0,2), (0,3)]
+            [[0,2], [0,3]]
         ]
     },
 ]
+
+def convert_value(val):
+    match val:
+        case None:
+            return EMPTY
+        case 0:
+            return MOON
+        case 1:
+            return SUN
+
+def load_test_cases(filepath):
+    with open(filepath, 'r') as f:
+        raw_cases = json.load(f)
+    
+    test_cases = []
+    for case in raw_cases:
+        converted_board = [
+            [convert_value(cell) for cell in row] for row in case["board"]
+        ]
+
+        test_cases.append({
+            "name": case["name"],
+            "board": converted_board,
+            "equals_coords": case["equals_coords"],
+            "opposites_coords": case["opposites_coords"],
+        })
+    
+    return test_cases
 
 def print_board(test_case, solution=None):
 
@@ -49,29 +82,28 @@ def print_board(test_case, solution=None):
         board_str += "|"
         for col in range(n_cols-1):
             if board[row][col] == SUN:
-                board_str += "⟡"
+                board_str += f"{YELLOW}⟡{RESET}"
             
             elif board[row][col] == MOON:
-                board_str += "☾"
+                board_str += f"{BLUE}☾{RESET}"
 
             else:
                 board_str += " "
 
-
-            if [(row, col), (row, col+1)] in equal_coords:
+            if [[row, col], [row, col+1]] in equal_coords:
                 board_str += "="
 
-            elif [(row, col), (row, col+1)] in opposites_coords:
+            elif [[row, col], [row, col+1]] in opposites_coords:
                 board_str += "x"
 
             else:
                 board_str += "|"
 
         if board[row][n_cols-1] == SUN:
-            board_str += "⟡|\n"
+            board_str += f"{YELLOW}⟡{RESET}|\n"
 
         elif board[row][n_cols-1] == MOON:
-            board_str += "☾|\n"
+            board_str += f"{BLUE}☾{RESET}|\n"
 
         else:
             board_str += " |\n"
@@ -79,10 +111,10 @@ def print_board(test_case, solution=None):
 
         board_str += "|"
         for col in range(n_cols-1):
-            if [(row, col), (row+1, col)] in equal_coords:
+            if [[row, col], [row+1, col]] in equal_coords:
                 board_str += "‖"
 
-            elif [(row, col), (row+1, col)] in opposites_coords:
+            elif [[row, col], [row+1, col]] in opposites_coords:
                 board_str += "x"
 
             else:
@@ -90,10 +122,10 @@ def print_board(test_case, solution=None):
 
             board_str += "┿"
 
-        if [(row, n_cols-1), (row+1, n_cols-1)] in equal_coords:
+        if [[row, n_cols-1], [row+1, n_cols-1]] in equal_coords:
                 board_str += "‖|\n"
 
-        elif [(row, n_cols-1), (row+1, n_cols-1)] in opposites_coords:
+        elif [[row, n_cols-1], [row+1, n_cols-1]] in opposites_coords:
             board_str += "x|\n"
 
         else:
@@ -102,10 +134,10 @@ def print_board(test_case, solution=None):
     board_str += "|"
     for col in range(n_cols):
         if board[n_rows-1][col] == SUN:
-            board_str += "⟡|"
+            board_str += f"{YELLOW}⟡{RESET}|"
 
         elif board[n_rows-1][col] == MOON:
-            board_str += "☾|"
+            board_str += f"{BLUE}☾{RESET}|"
 
         else:
             board_str += " |"
@@ -198,8 +230,8 @@ def penalty_encoding(test_case):
 
     #three followed cols penalty
     for col in zip(*board_symbols):
-        for i in range(len(row) - 3 + 1):
-            result += three_followed_penalty(row[i: i + 3][0], row[i: i + 3][1], row[i: i + 3][2])
+        for i in range(len(col) - 3 + 1):
+            result += three_followed_penalty(col[i: i + 3][0], col[i: i + 3][1], col[i: i + 3][2])
 
     result = result.expand()
     return result.as_independent(*result.free_symbols, as_Add=True)[1] #tirar o termo constante
@@ -247,7 +279,7 @@ def translate_Q_matrix_format(Q): #DWave uses a dictionary based representation 
 
 
 def get_solution_matrix(sample, n_rows, n_cols):
-    solution = [[None for _ in range(n_cols)] for _ in range(n_rows)]
+    solution = [[EMPTY for _ in range(n_cols)] for _ in range(n_rows)]
 
     for key, value in sample.items():
         row, col = divmod(key, n_cols)
@@ -257,10 +289,10 @@ def get_solution_matrix(sample, n_rows, n_cols):
 
 
 def solve(test_case):
-    n_rows = len(test_cases[0]["board"])
-    n_cols = len(test_cases[0]["board"][0])
+    n_rows = len(test_case["board"])
+    n_cols = len(test_case["board"][0])
 
-    penalty = penalty_encoding(test_cases[0])
+    penalty = penalty_encoding(test_case)
     Q = get_Q_matrix(penalty, n_rows, n_cols)
     Q_dict = translate_Q_matrix_format(Q)
 
@@ -274,5 +306,6 @@ def solve(test_case):
 
 
 if __name__ == "__main__":
+    test_cases = load_test_cases('test_cases.json')
     print_board(test_cases[0])
     solve(test_cases[0])
