@@ -1,6 +1,7 @@
 import numpy as np
 import sympy as sy
 import neal
+from qiskit.quantum_info import SparsePauliOp
 
 import json
 import re
@@ -43,6 +44,7 @@ def convert_value(val):
             return MOON
         case 1:
             return SUN
+
 
 def load_test_cases(filepath):
     with open(filepath, 'r') as f:
@@ -149,6 +151,7 @@ def print_board(test_case, solution=None):
 
     print(board_str)
 
+
 def starting_moon_penalty(symbol):
     penalty = (symbol-0)**2
 
@@ -238,7 +241,7 @@ def penalty_encoding(test_case):
 
 
 def get_symbol_coords(symbol):
-    match = re.match(r"x(\d+)_(\d+)", str(symbol))
+    match = re.match(r"[xs](\d+)_(\d+)", str(symbol))
     if match:
         return int(match.group(1)), int(match.group(2))
     
@@ -249,13 +252,13 @@ def get_Q_matrix(expanded_penalty, n_cols, n_rows):
     for term in expanded_penalty.args:
         coeff, vars = term.as_coeff_mul()
 
-        if(len(vars) == 1):
+        if len(vars) == 1:
             row, col = get_symbol_coords(vars[0])
             index = row*n_rows+col
 
             Q[index][index] = coeff
 
-        elif(len(vars) == 2): #termos quadráticos
+        elif len(vars) == 2: #termos quadráticos
             row1, col1 = get_symbol_coords(vars[0])
             row2, col2 = get_symbol_coords(vars[1])
             index1 = row1*n_rows+col1
@@ -278,7 +281,7 @@ def translate_Q_matrix_format(Q): #DWave uses a dictionary based representation 
     return Q_dict
 
 
-def get_solution_matrix(sample, n_rows, n_cols):
+def get_qubo_solution_matrix(sample, n_rows, n_cols):
     solution = [[EMPTY for _ in range(n_cols)] for _ in range(n_rows)]
 
     for key, value in sample.items():
@@ -288,11 +291,7 @@ def get_solution_matrix(sample, n_rows, n_cols):
     return solution
 
 
-def solve(test_case):
-    n_rows = len(test_case["board"])
-    n_cols = len(test_case["board"][0])
-
-    penalty = penalty_encoding(test_case)
+def get_qubo_solution(penalty, n_rows, n_cols):
     Q = get_Q_matrix(penalty, n_rows, n_cols)
     Q_dict = translate_Q_matrix_format(Q)
 
@@ -300,9 +299,70 @@ def solve(test_case):
     response = sampler.sample_qubo(Q_dict, num_reads=100)
 
     response_list = list(response.data(['sample', 'energy']))
-    solution = get_solution_matrix(response_list[0][0], n_rows, n_cols)
+    return get_qubo_solution_matrix(response_list[0][0], n_rows, n_cols)
 
-    print_board(test_case, solution)
+
+def change_symbol_name(symbol):
+    return sy.Symbol(symbol.name.replace('x', 's'))
+
+
+def qubo_to_ising_model_translation(penalty):
+    ising = 0
+
+    for term in penalty.args:
+        coeff, vars = term.as_coeff_mul()
+        
+        if len(vars) == 1: #termos lineares
+            s = change_symbol_name(vars[0])
+            ising += coeff*((s+1)/2)
+
+        elif len(vars) == 2: #termos quadráticos
+            s1 = change_symbol_name(vars[0])
+            s2 = change_symbol_name(vars[1])
+            ising += coeff*((s1+1)/2)*((s2+1)/2)
+
+    ising = ising.expand()
+    return ising.as_independent(*ising.free_symbols, as_Add=True)[1]
+        
+
+def get_pauli_string(vars, n_rows, n_cols):
+    n_qubits = n_rows * n_cols
+    pauli_str = ['I'] * n_qubits
+
+    for var in vars:
+        row, col = get_symbol_coords(var)
+        index = row * n_cols + col
+        pauli_str[index] = 'Z'
+
+    return ''.join(pauli_str)
+    
+
+def get_hamiltonian_pauli_op(ising_expr, n_rows, n_cols):
+    pauli_strings = []
+    coefficients = []
+
+    for term in ising_expr.args:
+        coeff, vars = term.as_coeff_mul()
+
+        pauli_str = ''.join(reversed(get_pauli_string(vars, n_rows, n_cols)))
+    
+        pauli_strings.append(pauli_str)
+        coefficients.append(float(coeff))
+
+    return SparsePauliOp(pauli_strings, coefficients)
+
+
+def solve(test_case):
+    n_rows = len(test_case["board"])
+    n_cols = len(test_case["board"][0])
+
+    penalty = penalty_encoding(test_case)
+
+    ising = qubo_to_ising_model_translation(penalty)
+    get_hamiltonian_pauli_op(ising, n_rows, n_cols)
+
+    # QUBO Solution
+    #print_board(test_case, get_qubo_solution(penalty, n_rows, n_cols))
 
 
 if __name__ == "__main__":
