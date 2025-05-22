@@ -1,7 +1,13 @@
 import numpy as np
 import sympy as sy
+import matplotlib.pyplot as plt
 import neal
 from qiskit.quantum_info import SparsePauliOp
+from qiskit.circuit.library import PauliEvolutionGate
+from qiskit.circuit import QuantumCircuit, Parameter
+from qiskit.primitives import StatevectorEstimator
+from scipy.optimize import minimize
+from qiskit.quantum_info import Statevector
 
 import json
 import re
@@ -14,27 +20,42 @@ EMPTY = None
 SUN   = 1
 MOON  = 0
 
-test_cases_linkedin = [
-    {
-        "name": "Linkedin 171",
-        "board": [
-            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
-            [MOON , EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
-            [EMPTY, EMPTY, EMPTY, MOON , EMPTY, EMPTY],
-            [EMPTY, EMPTY, MOON , EMPTY, EMPTY, EMPTY],
-            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, MOON ],
-            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY]
-        ],
-        "equals_coords": [
-            [[1,1], [1,2]],
-            [[3,4], [3,5]],
-            [[4,3], [4,4]],
-        ],
-        "opposites_coords": [
-            [[0,2], [0,3]]
-        ]
-    },
-]
+test_case_linkedin = {
+    "name": "Linkedin 171",
+    "board": [
+        [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+        [MOON , EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+        [EMPTY, EMPTY, EMPTY, MOON , EMPTY, EMPTY],
+        [EMPTY, EMPTY, MOON , EMPTY, EMPTY, EMPTY],
+        [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, MOON ],
+        [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY]
+    ],
+    "equals_coords": [
+        [[1,1], [1,2]],
+        [[3,4], [3,5]],
+        [[4,3], [4,4]]
+    ],
+    "opposites_coords": [
+        [[0,2], [0,3]]
+    ]
+}
+
+test_case_4_4 = {
+    "name": "4x4 Test",
+    "board": [
+        [EMPTY, EMPTY, MOON , EMPTY],
+        [EMPTY, EMPTY, EMPTY, EMPTY],
+        [EMPTY, EMPTY, EMPTY, EMPTY],
+        [EMPTY, MOON , EMPTY, EMPTY]
+    ],
+    "equals_coords": [
+        [[0,1], [0,2]],
+        [[1,0], [2,0]]
+    ],
+    "opposites_coords": [
+        [[1,1], [1,2]]
+    ]
+}
 
 def convert_value(val):
     match val:
@@ -296,7 +317,7 @@ def get_qubo_solution(penalty, n_rows, n_cols):
     Q_dict = translate_Q_matrix_format(Q)
 
     sampler = neal.SimulatedAnnealingSampler()
-    response = sampler.sample_qubo(Q_dict, num_reads=100)
+    response = sampler.sample_qubo(Q_dict, num_reads=1)
 
     response_list = list(response.data(['sample', 'energy']))
     return get_qubo_solution_matrix(response_list[0][0], n_rows, n_cols)
@@ -337,7 +358,7 @@ def get_pauli_string(vars, n_rows, n_cols):
     return ''.join(pauli_str)
     
 
-def get_hamiltonian_pauli_op(ising_expr, n_rows, n_cols):
+def get_cost_hamiltonian(ising_expr, n_rows, n_cols):
     pauli_strings = []
     coefficients = []
 
@@ -352,6 +373,16 @@ def get_hamiltonian_pauli_op(ising_expr, n_rows, n_cols):
     return SparsePauliOp(pauli_strings, coefficients)
 
 
+def get_mixer_hamiltonian(n_rows, n_cols):
+    pauli_strings = []
+    for i in range(n_rows*n_cols):
+        term = list('I' * (n_rows * n_cols))
+        term[i] = 'X'
+        pauli_strings.append(''.join(term))
+
+    return SparsePauliOp(pauli_strings)
+
+
 def solve(test_case):
     n_rows = len(test_case["board"])
     n_cols = len(test_case["board"][0])
@@ -359,13 +390,97 @@ def solve(test_case):
     penalty = penalty_encoding(test_case)
 
     ising = qubo_to_ising_model_translation(penalty)
-    get_hamiltonian_pauli_op(ising, n_rows, n_cols)
+    Hc = get_cost_hamiltonian(ising, n_rows, n_cols)
+    Hm = get_mixer_hamiltonian(n_rows, n_cols)
+
+    gamma_values = [Parameter(f"g{i}") for i in range(4)]
+    alpha_values = [Parameter(f"a{i}") for i in range(4)]
+
+    qubits = range(n_rows*n_cols)
+    qc = QuantumCircuit(n_rows*n_cols)
+
+    qc.h(qubits)
+
+    for gamma, alpha in zip(gamma_values, alpha_values):
+        qc.append(PauliEvolutionGate(Hc, time=gamma, label="Hc"), qubits)
+        qc.append(PauliEvolutionGate(Hm, time=alpha, label="Hm"), qubits)
+
+    #qc.measure_all()
+
+    qc.draw(output="mpl", fold=-1)
+    #plt.show()
+
+    estimator = StatevectorEstimator()
+    circuit = qc
+    observable = Hc
+    g_values = list(np.random.randn(4))
+    a_values = list(np.random.randn(4))
+    params = g_values + a_values
+
+    pub = (circuit, observable, params)
+    job = estimator.run([pub])
+
+    result = job.result()[0]
+    print("evs: ", result.data.evs)
+
+    cost_history = []
+
+    def cost_function(params, circuit, observable, estimator):
+        pub = (circuit, observable, params)
+        job = estimator.run([pub])
+        result = job.result()[0]
+        average_energy = result.data.evs
+
+        cost_history.append(average_energy)
+        return average_energy
+    
+    init_params = np.random.rand(8)*2*np.pi
+
+    result = minimize(
+        cost_function,
+        init_params,
+        args=(qc, Hc, estimator),
+        # methods="COBYLA",
+        tol=0.01,
+    )
+
+    print("result: ", result)
+
+    bound_qc = qc.assign_parameters(result.x)
+    final_state = Statevector.from_instruction(bound_qc)
+    counts = final_state.sample_counts(shots=1000)
+    most_common_bitstring = max(counts.items(), key=lambda item: item[1])[0]
+    print("Most frequently sampled bitstring:", most_common_bitstring)
+
+
 
     # QUBO Solution
-    #print_board(test_case, get_qubo_solution(penalty, n_rows, n_cols))
+    # print_board(test_case, get_qubo_solution(penalty, n_rows, n_cols))
 
 
 if __name__ == "__main__":
-    test_cases = load_test_cases('test_cases.json')
-    print_board(test_cases[0])
-    solve(test_cases[0])
+    #test_cases = load_test_cases('test_cases.json')
+    #print_board(test_cases[0])
+
+    test_case4_4 = {
+        "name": "4x4 Test",
+        "board": [
+            [EMPTY, EMPTY, MOON , EMPTY],
+            [EMPTY, EMPTY, EMPTY, EMPTY],
+            [EMPTY, EMPTY, EMPTY, EMPTY],
+            [EMPTY, MOON , EMPTY, EMPTY]
+        ],
+        "equals_coords": [
+            [[0,1], [0,2]],
+            [[1,0], [2,0]]
+        ],
+        "opposites_coords": [
+            [[1,1], [1,2]]
+        ]
+    }
+
+    print_board(test_case4_4)
+    solve(test_case4_4)
+
+
+    #solve(test_cases[0])
