@@ -5,9 +5,10 @@ import neal
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.circuit.library import PauliEvolutionGate
 from qiskit.circuit import QuantumCircuit, Parameter
-from qiskit.primitives import StatevectorEstimator
+from qiskit.primitives import StatevectorEstimator, StatevectorSampler
 from scipy.optimize import minimize
 from qiskit.quantum_info import Statevector
+from qiskit.visualization import plot_histogram
 
 import json
 import re
@@ -434,25 +435,37 @@ def solve(test_case):
         cost_history.append(average_energy)
         return average_energy
     
-    init_params = np.random.rand(8)*2*np.pi
+    init_params = np.random.randn(2*4)
 
-    result = minimize(
+    optimization_result = minimize(
         cost_function,
         init_params,
         args=(qc, Hc, estimator),
-        # methods="COBYLA",
-        tol=0.01,
+        method="COBYLA",
+        tol=0.01
     )
 
-    print("result: ", result)
+    print("result: ", optimization_result)
 
-    bound_qc = qc.assign_parameters(result.x)
-    final_state = Statevector.from_instruction(bound_qc)
-    counts = final_state.sample_counts(shots=1000)
-    most_common_bitstring = max(counts.items(), key=lambda item: item[1])[0]
-    print("Most frequently sampled bitstring:", most_common_bitstring)
+    fig, ax = plt.subplots()
+    iterations = range(len(cost_history))
+    ax.plot(iterations, cost_history)
 
+    # plt.show()
 
+    circuit = qc.copy()
+    circuit.measure_all()
+    optimal_params = optimization_result.x
+
+    sampler = StatevectorSampler()
+    pub = (circuit, optimal_params)
+    job = sampler.run([pub], shots=1000)
+
+    result = job.result()[0]
+    counts = result.data.meas.get_counts()
+    plot_histogram(counts)
+
+    plt.show()
 
     # QUBO Solution
     # print_board(test_case, get_qubo_solution(penalty, n_rows, n_cols))
@@ -479,8 +492,18 @@ if __name__ == "__main__":
         ]
     }
 
-    print_board(test_case4_4)
-    solve(test_case4_4)
+    test_case2_2 = {
+        "name": "2x2 Test",
+        "board": [
+            [EMPTY, MOON ],
+            [EMPTY, EMPTY]
+        ],
+        "equals_coords": [],
+        "opposites_coords": []
+    }
+
+    print_board(test_case2_2)
+    solve(test_case2_2)
 
 
     #solve(test_cases[0])
