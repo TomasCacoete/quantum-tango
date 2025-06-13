@@ -318,7 +318,7 @@ def get_qubo_solution(penalty, n_rows, n_cols):
     Q_dict = translate_Q_matrix_format(Q)
 
     sampler = neal.SimulatedAnnealingSampler()
-    response = sampler.sample_qubo(Q_dict, num_reads=1)
+    response = sampler.sample_qubo(Q_dict, num_reads=100)
 
     response_list = list(response.data(['sample', 'energy']))
     return get_qubo_solution_matrix(response_list[0][0], n_rows, n_cols)
@@ -406,24 +406,12 @@ def solve(test_case):
         qc.append(PauliEvolutionGate(Hc, time=gamma, label="Hc"), qubits)
         qc.append(PauliEvolutionGate(Hm, time=alpha, label="Hm"), qubits)
 
-    #qc.measure_all()
+    # qc.measure_all()
 
     qc.draw(output="mpl", fold=-1)
     #plt.show()
 
     estimator = StatevectorEstimator()
-    circuit = qc
-    observable = Hc
-    g_values = list(np.random.randn(4))
-    a_values = list(np.random.randn(4))
-    params = g_values + a_values
-
-    pub = (circuit, observable, params)
-    job = estimator.run([pub])
-
-    result = job.result()[0]
-    print("evs: ", result.data.evs)
-
     cost_history = []
 
     def cost_function(params, circuit, observable, estimator):
@@ -459,16 +447,17 @@ def solve(test_case):
 
     sampler = StatevectorSampler()
     pub = (circuit, optimal_params)
-    job = sampler.run([pub], shots=1000)
+    job = sampler.run([pub], shots=20000)
 
     result = job.result()[0]
     counts = result.data.meas.get_counts()
-    plot_histogram(counts)
+    top_counts = dict(sorted(counts.items(), key=lambda item: item[1], reverse=True)[:10])
+    plot_histogram(top_counts)
 
     plt.show()
 
     # QUBO Solution
-    # print_board(test_case, get_qubo_solution(penalty, n_rows, n_cols))
+    print_board(test_case, get_qubo_solution(penalty, n_rows, n_cols))
 
 
 if __name__ == "__main__":
@@ -502,8 +491,8 @@ if __name__ == "__main__":
         "opposites_coords": []
     }
 
-    print_board(test_case2_2)
-    solve(test_case2_2)
+    print_board(test_case4_4)
+    solve(test_case4_4)
 
 
     #solve(test_cases[0])
